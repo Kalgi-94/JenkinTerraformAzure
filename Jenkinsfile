@@ -6,11 +6,6 @@ pipeline {
         choice(name: 'action', choices: ['apply', 'destroy'], description: 'Select the action to perform')
     }
 
-    environment {
-        Az_ACCESS_KEY_ID     = credentials('az-access-key-id')
-        Az_SECRET_ACCESS_KEY = credentials('az-secret-access-key')
-    }
-
     stages {
         stage('Checkout') {
             steps {
