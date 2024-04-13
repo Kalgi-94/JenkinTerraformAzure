@@ -1,77 +1,53 @@
 pipeline {
-    agent any; 
+    agent any
+
+    parameters {
+        booleanParam(name: 'autoApprove', defaultValue: false, description: 'Automatically run apply after generating plan?')
+        choice(name: 'action', choices: ['apply', 'destroy'], description: 'Select the action to perform')
+    }
+
     environment {
-       MY_CRED = credentials('azurelogin')
-    } 
+        AWS_ACCESS_KEY_ID     = credentials('aws-access-key-id')
+        AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
+        AWS_DEFAULT_REGION    = 'ap-south-1'
+    }
+
     stages {
-        stage('Git checkout'){
+        stage('Checkout') {
             steps {
-                git 'https://github.com/S-I-N-D-H-U-J-A/JenkinTerraformAzure'
+                git branch: 'main', url: 'https://github.com/Kalgi-94/project1/tree/main/project1-Kalgi-VM'
             }
         }
-        stage('azurelogin') {
+        stage('Terraform init') {
             steps {
-                sh 'az login --service-principal -u $MY_CRED_CLIENT_ID -p $MY_CRED_CLIENT_SECRET -t $MY_CRED_TENANT_ID'
+                sh 'terraform init'
             }
         }
-        stage('Terraform Init'){
-            steps{
-                    sh """                    
-                    echo "Initialising Terraform"
-                    terraform init
-                    """
+        stage('Plan') {
+            steps {
+                sh 'terraform plan -out tfplan'
+                sh 'terraform show -no-color tfplan > tfplan.txt'
             }
         }
-        stage('Terraform Validate'){
+        stage('Apply / Destroy') {
             steps {
-                    sh """                    
-                    echo "validating Terraform Code"
-                    terraform validate
-                    """
-            }
-        }
-        stage('Terraform Plan'){
-            steps {
-                    withCredentials([azureServicePrincipal(
-                    credentialsId: 'azurelogin',
-                    subscriptionIdVariable: 'ARM_SUBSCRIPTION_ID',
-                    clientIdVariable: 'ARM_CLIENT_ID',
-                    clientSecretVariable: 'ARM_CLIENT_SECRET',
-                    tenantIdVariable: 'ARM_TENANT_ID'
-                )]) {
-                        sh """                    
-                        echo "Plan Terraform"
-                        terraform plan
-                        """
-                           }
-                 }
-        }
-        stage('Terraform apply') {
-            steps {
-                withCredentials([azureServicePrincipal(
-                credentialsId: 'azurelogin',
-                subscriptionIdVariable: 'ARM_SUBSCRIPTION_ID',
-                clientIdVariable: 'ARM_CLIENT_ID',
-                clientSecretVariable: 'ARM_CLIENT_SECRET',
-                tenantIdVariable: 'ARM_TENANT_ID')]){
-                    sh """                    
-                        echo "Apply Terraform"
-                        terraform apply -lock=false -auto-approve
-                        """
+                script {
+                    if (params.action == 'apply') {
+                        if (!params.autoApprove) {
+                            def plan = readFile 'tfplan.txt'
+                            input message: "Do you want to apply the plan?",
+                            parameters: [text(name: 'Plan', description: 'Please review the plan', defaultValue: plan)]
+                        }
+
+                        sh 'terraform ${action} -input=false tfplan'
+                    } else if (params.action == 'destroy') {
+                        sh 'terraform ${action} --auto-approve'
+                    } else {
+                        error "Invalid action selected. Please choose either 'apply' or 'destroy'."
+                    }
                 }
             }
         }
-    }
-post {
-    failure {
-                echo "Jenkins Build Failed"
-            }
-    
-    success {
-                echo "Jenkins Build Success"
-            }
-    always {
-        cleanWs()
-           }
+
     }
 }
